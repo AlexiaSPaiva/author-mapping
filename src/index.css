@@ -1,0 +1,4 @@
+/* Tailwind utilities only. The reset comes from MUI's CssBaseline — see
+   tailwind.config.js, where preflight is disabled. */
+@tailwind components;
+@tailwind utilities;
