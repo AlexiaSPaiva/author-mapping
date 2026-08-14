@@ -51,8 +51,14 @@ export default function SuiteNav({ current, title, subtitle }) {
                 ) : (
                   <Link
                     href={stage.url}
+                    // color="inherit" picks up the AppBar's contrast text. A
+                    // Tailwind text colour here loses to MUI's own class in the
+                    // cascade, which rendered these links invisible: dark blue
+                    // on the dark blue bar. Colour is a component concern, so
+                    // MUI owns it — see the styling boundary in the README.
+                    color="inherit"
                     underline="hover"
-                    className="rounded-md px-2 py-1 text-sm text-white/85 hover:text-white"
+                    className="rounded-md px-2 py-1 text-sm opacity-90 hover:opacity-100"
                   >
                     {stage.label}
                   </Link>

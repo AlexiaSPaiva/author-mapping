@@ -75,6 +75,8 @@ The layout is a **circle**, not a force-directed simulation. That was a delibera
 - Edges are quadratic Bézier curves bowed towards the centre, so a dense graph stays readable instead of collapsing into overlapping chords through the middle.
 - Node radius and edge width use square-root scales, so one prolific author or one heavy collaboration does not swamp everything else.
 
+The canvas is wider than it is tall, because labels sit outside the ring and read horizontally: a square canvas clipped the leftmost and rightmost names.
+
 **What the circle costs:** it does not reveal cluster structure the way a force-directed layout can. If clustering ever became the question, that is when the extra complexity would earn its place.
 
 ## Architecture decisions
@@ -98,7 +100,7 @@ The layout is a **circle**, not a force-directed simulation. That was a delibera
 - **Coverage is OpenAlex's coverage.** Strong for indexed journals; weaker for books, theses, non-English and non-indexed venues. An author absent here is not an author absent from the field.
 - **Author disambiguation is OpenAlex's**, and it is good but not perfect. Occasional merges and splits exist upstream.
 - **Affiliation is the most frequent one in the result set**, so a researcher who recently moved may show their previous institution.
-- **The graph shows at most 30 authors.** Beyond that the labels are unreadable. The table below it shows everyone.
+- **The graph shows at most 20 authors.** Beyond that the labels collide at the top and bottom of the ring, where horizontal text needs the most room. The table below it shows everyone.
 - **Co-authorship is counted within the result set only.** Two authors with fifty joint papers outside your topic show as unconnected if none of those papers matched.
 - **The search is OpenAlex's full-text relevance search**, not the TF-IDF ranking used in stage 1. The two stages answer different questions and deliberately do not share a ranking.
 - **No UI tests.** Unit tests cover the domain logic (grouping, edges, layout) and the pure parts of the API client. The network call itself is exercised by hand.

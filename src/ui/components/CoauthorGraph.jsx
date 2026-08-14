@@ -17,12 +17,27 @@ import {
   nodeRadius,
 } from '../../domain/layout.js';
 
-const SIZE = 620;
-const CENTRE = SIZE / 2;
-const RADIUS = SIZE / 2 - 96; // Leaves room for labels outside the ring.
+/**
+ * The canvas is wider than it is tall on purpose. Labels sit outside the ring
+ * and read horizontally, so the space they need is horizontal: with a square
+ * canvas the leftmost and rightmost names ran off the viewBox and were clipped.
+ */
+const WIDTH = 940;
+const HEIGHT = 620;
+const CENTRE_X = WIDTH / 2;
+const CENTRE_Y = HEIGHT / 2;
+const RADIUS = HEIGHT / 2 - 60;
 
-/** More than this many nodes and the labels become unreadable mush. */
-export const MAX_NODES = 30;
+/**
+ * Node cap. Twenty is the point where labels at the top and bottom of the ring
+ * stop colliding: nodes there are close together horizontally, which is exactly
+ * where horizontal text needs the most room. The table below the graph shows
+ * every author, so this cap limits the picture and never the data.
+ */
+export const MAX_NODES = 20;
+
+/** Longer names are truncated; the full name is in the node's <title>. */
+const MAX_LABEL_CHARS = 24;
 
 /**
  * @param {{
@@ -39,8 +54,8 @@ export default function CoauthorGraph({ authors, edges, skippedWorks }) {
     const shown = authors.slice(0, MAX_NODES);
     const positions = circleLayout(shown.length, {
       radius: RADIUS,
-      centreX: CENTRE,
-      centreY: CENTRE,
+      centreX: CENTRE_X,
+      centreY: CENTRE_Y,
     });
     const shownIds = new Set(shown.map((author) => author.id));
 
@@ -89,8 +104,8 @@ export default function CoauthorGraph({ authors, edges, skippedWorks }) {
 
       <div className="overflow-x-auto">
         <svg
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
-          className="mx-auto block h-auto w-full max-w-[620px]"
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          className="mx-auto block h-auto w-full min-w-[600px] max-w-[940px]"
           role="img"
           aria-label={`Co-authorship network of ${nodes.length} authors with ${visibleEdges.length} collaboration links. The table below lists the same authors.`}
         >
@@ -98,7 +113,7 @@ export default function CoauthorGraph({ authors, edges, skippedWorks }) {
             {visibleEdges.map((edge) => (
               <path
                 key={`${edge.source}-${edge.target}`}
-                d={arcPath(edge.from, edge.to, { centreX: CENTRE, centreY: CENTRE })}
+                d={arcPath(edge.from, edge.to, { centreX: CENTRE_X, centreY: CENTRE_Y })}
                 strokeWidth={edgeWidth(edge.weight, maxWeight)}
                 strokeOpacity={isDimmed(edge.source) && isDimmed(edge.target) ? 0.06 : 0.28}
                 strokeLinecap="round"
@@ -126,7 +141,9 @@ export default function CoauthorGraph({ authors, edges, skippedWorks }) {
                   fontSize="11"
                   fill="#16202A"
                 >
-                  {node.name.length > 26 ? `${node.name.slice(0, 24)}…` : node.name}
+                  {node.name.length > MAX_LABEL_CHARS
+                    ? `${node.name.slice(0, MAX_LABEL_CHARS - 1)}…`
+                    : node.name}
                 </text>
                 <title>
                   {node.name} — {node.worksCount} work
