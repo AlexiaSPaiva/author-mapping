@@ -20,7 +20,7 @@ import { createProfile, profileToQuery, validateProfile } from '../../shared/res
 import MethodDisclaimer from '../../shared/MethodDisclaimer.jsx';
 import SuiteNav from '../../shared/SuiteNav.jsx';
 import { downloadText, toCsv } from '../../services/fileIo.js';
-import { clearCache, fetchWorks } from '../../services/openalex.js';
+import { fetchWorks } from '../../services/openalex.js';
 import { loadJson, saveJson } from '../../services/storage.js';
 import AuthorGroups from '../components/AuthorGroups.jsx';
 import CoauthorGraph from '../components/CoauthorGraph.jsx';
@@ -48,7 +48,6 @@ export default function App() {
   const [profile, setProfile] = useState(loadSession);
   const [works, setWorks] = useState([]);
   const [status, setStatus] = useState({ loading: false, error: null, notice: null });
-  const [requestUrl, setRequestUrl] = useState('');
   const [criterion, setCriterion] = useState('volume');
   const [minWorks, setMinWorks] = useState(2);
   const [fromYear, setFromYear] = useState('');
@@ -93,8 +92,6 @@ export default function App() {
         fromYear: fromYear ? Number(fromYear) : null,
         signal: controller.signal,
       });
-      setRequestUrl(result.url);
-
       if (result.error) {
         setStatus({ loading: false, error: result.error, notice: null });
         return;
@@ -151,7 +148,6 @@ export default function App() {
     <>
       <SuiteNav
         current="authors"
-        title="author-mapping"
         subtitle="Find and group the people publishing on your topic, from OpenAlex"
       />
 
@@ -236,30 +232,16 @@ export default function App() {
               <Button variant="contained" onClick={search} disabled={status.loading}>
                 {status.loading ? 'Searching…' : 'Search OpenAlex'}
               </Button>
-              <Button variant="outlined" onClick={exportCsv} disabled={filtered.length === 0}>
-                Export {filtered.length} authors as CSV
-              </Button>
               <Button
-                onClick={() => {
-                  clearCache();
-                  setStatus((current) => ({ ...current, notice: 'Local cache cleared.' }));
-                }}
-                size="small"
+                variant="outlined"
+                onClick={exportCsv}
+                disabled={filtered.length === 0}
+                title="Downloads the filtered authors as a CSV file"
               >
-                Clear cache
+                Export CSV ({filtered.length})
               </Button>
               {status.loading && <CircularProgress size={20} aria-label="Searching" />}
             </div>
-
-            {requestUrl && (
-              <Typography variant="caption" color="text.secondary" className="mt-3 block break-all">
-                Request sent:{' '}
-                <a href={requestUrl} target="_blank" rel="noopener noreferrer">
-                  {requestUrl}
-                </a>
-                {!MAILTO && ' · no VITE_OPENALEX_MAILTO configured, using the common request pool'}
-              </Typography>
-            )}
 
             {status.error && (
               <Alert severity="error" className="mt-3">
@@ -311,7 +293,7 @@ export default function App() {
           component="footer"
           className="mt-8 block"
         >
-          Part 3 of 3 of litpipe · data from{' '}
+          Stage 3 of 3 of litpipe · data from{' '}
           <a href="https://openalex.org" target="_blank" rel="noopener noreferrer">
             OpenAlex
           </a>{' '}

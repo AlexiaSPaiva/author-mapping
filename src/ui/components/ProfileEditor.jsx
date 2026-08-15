@@ -46,16 +46,15 @@ export default function ProfileEditor({ profile, onChange }) {
       <Typography id="profile-heading" variant="h2" component="h2" className="mb-1">
         Research profile
       </Typography>
-      <Typography variant="body2" color="text.secondary" className="mb-4">
-        Describe what you are researching. This text is what every article is compared against, and
-        it is the same profile the other two litpipe apps read.
+      <Typography variant="body2" color="text.secondary" className="mb-5">
+        Every article is compared against this text. All three litpipe stages read the same profile.
       </Typography>
 
       <TextField
         label="Research topic"
         value={profile.topic}
         onChange={(event) => update({ topic: event.target.value.slice(0, LIMITS.topic) })}
-        placeholder="e.g. Differentiating dementia etiologies from cognitive and behavioural patterns in the ELSA cohort"
+        placeholder="e.g. Differentiating dementia etiologies in the ELSA cohort"
         multiline
         minRows={3}
         fullWidth
