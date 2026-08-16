@@ -4,6 +4,7 @@
  */
 import { useRef, useState } from 'react';
 import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
@@ -11,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 
 import { LIMITS, parseProfileJson } from '../../shared/researchProfile.js';
+import { DOCUMENT_ACCEPT, extractText, isDocument } from '../../services/documentImport.js';
 import { downloadJson, readTextFile } from '../../services/fileIo.js';
 
 /**
@@ -22,6 +24,7 @@ import { downloadJson, readTextFile } from '../../services/fileIo.js';
 export default function ProfileEditor({ profile, onChange }) {
   const fileInput = useRef(null);
   const [errors, setErrors] = useState([]);
+  const [busy, setBusy] = useState(false);
 
   const update = (patch) => onChange({ ...profile, ...patch, updatedAt: new Date().toISOString() });
 
@@ -33,12 +36,33 @@ export default function ProfileEditor({ profile, onChange }) {
 
   const handleImport = async (event) => {
     const file = event.target.files?.[0];
+    // Reset so picking the same file twice fires change again.
+    event.target.value = '';
     if (!file) return;
+
+    // A PDF or a .txt note is the project itself — its text becomes the topic.
+    // A .json is a profile someone exported from one of the three apps.
+    if (isDocument(file)) {
+      setBusy(true);
+      try {
+        const text = await extractText(file);
+        if (!text) {
+          setErrors([`No text found in ${file.name}. A scanned PDF needs OCR first.`]);
+          return;
+        }
+        setErrors([]);
+        update({ topic: text.slice(0, LIMITS.topic) });
+      } catch (error) {
+        setErrors([error.message]);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const result = parseProfileJson(await readTextFile(file));
     setErrors(result.errors);
     if (result.ok) onChange(result.profile);
-    // Reset so picking the same file twice fires change again.
-    event.target.value = '';
   };
 
   return (
@@ -112,13 +136,19 @@ export default function ProfileEditor({ profile, onChange }) {
         <Button variant="outlined" onClick={() => downloadJson('research-profile.json', profile)}>
           Export profile
         </Button>
-        <Button variant="outlined" onClick={() => fileInput.current?.click()}>
-          Import profile
+        <Button
+          variant="outlined"
+          onClick={() => fileInput.current?.click()}
+          disabled={busy}
+          startIcon={busy ? <CircularProgress size={16} color="inherit" /> : null}
+          title="A PDF or .txt becomes the topic; a .json restores a profile exported from any stage"
+        >
+          {busy ? 'Reading…' : 'Import PDF, text or profile'}
         </Button>
         <input
           ref={fileInput}
           type="file"
-          accept=".json,application/json"
+          accept={`${DOCUMENT_ACCEPT},.json,application/json`}
           onChange={handleImport}
           className="hidden"
           aria-hidden="true"
