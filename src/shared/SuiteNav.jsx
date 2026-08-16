@@ -4,16 +4,15 @@
  * the `current` prop differing — that is what makes them read as one suite
  * rather than three unrelated pages.
  *
- * The pipeline is drawn as a chain of neurons: each stage is a cell body, and
- * what one stage hands to the next (a selection, a library) crosses a synaptic
- * cleft as vesicles. The metaphor is the product — data only ever travels
- * forward, one stage at a time, and nothing crosses without being released.
+ * The pipeline is drawn as living tissue (see NeuralNetwork.jsx); this file owns
+ * the text over it and the links a keyboard can reach.
  */
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Link from '@mui/material/Link';
-import useMediaQuery from '@mui/material/useMediaQuery';
+
+import NeuralNetwork from './NeuralNetwork.jsx';
 
 /**
  * The pipeline, in order. Stage order and the display name of each app are the
@@ -41,153 +40,25 @@ export const STAGES = [
   },
 ];
 
-/** Geometry of the drawing, in viewBox units. One place to retune the spacing. */
-const CELL = { radius: 15, gap: 152, firstX: 34, y: 34 };
-const VESICLES = [0, 1, 2];
-
-/** x of the cell body of stage `index`. */
-const cellX = (index) => CELL.firstX + index * CELL.gap;
-
-/**
- * One neuron: dendrites reaching back towards the previous stage, a soma
- * carrying the stage number, and an axon leaving towards the next one.
- */
-function Neuron({ index, stage, isCurrent }) {
-  const x = cellX(index);
-  const { y, radius } = CELL;
-
-  return (
-    <g>
-      {/* Dendrites — the inputs this stage accepts (documents, or the stage before). */}
-      <g stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={0.55}>
-        <path d={`M${x - radius} ${y} l-9 -8`} fill="none" />
-        <path d={`M${x - radius} ${y} l-11 0`} fill="none" />
-        <path d={`M${x - radius} ${y} l-9 8`} fill="none" />
-      </g>
-
-      {isCurrent && (
-        <circle cx={x} cy={y} r={radius + 5} fill="currentColor" opacity={0.18}>
-          {/* A cell that is firing, as opposed to one merely wired up. */}
-          <animate
-            attributeName="r"
-            values={`${radius + 3};${radius + 7};${radius + 3}`}
-            dur="2.6s"
-            repeatCount="indefinite"
-          />
-        </circle>
-      )}
-
-      <circle
-        cx={x}
-        cy={y}
-        r={radius}
-        fill={isCurrent ? '#FFFFFF' : 'transparent'}
-        stroke="currentColor"
-        strokeWidth="1.75"
-        opacity={isCurrent ? 1 : 0.65}
-      />
-      <text
-        x={x}
-        y={y}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize="14"
-        fontWeight="700"
-        fill={isCurrent ? '#1B4965' : 'currentColor'}
-        opacity={isCurrent ? 1 : 0.85}
-      >
-        {index + 1}
-      </text>
-      <text
-        x={x}
-        y={y + radius + 16}
-        textAnchor="middle"
-        fontSize="11"
-        fontWeight={isCurrent ? 700 : 500}
-        fill="currentColor"
-        opacity={isCurrent ? 1 : 0.75}
-      >
-        {stage.label}
-      </text>
-    </g>
-  );
-}
-
-/**
- * The axon and the cleft between two stages. The vesicles only travel while the
- * pipeline is live for the reader — motion is suppressed when the system asks
- * for it.
- */
-function Synapse({ index, animated }) {
-  const from = cellX(index) + CELL.radius;
-  const to = cellX(index + 1) - CELL.radius - 11;
-  const { y } = CELL;
-  const terminal = to - 12;
-
-  return (
-    <g>
-      {/* Axon, ending in the bulb that holds the vesicles. */}
-      <path
-        d={`M${from + 3} ${y} H${terminal}`}
-        stroke="currentColor"
-        strokeWidth="2"
-        opacity={0.4}
-        fill="none"
-      />
-      <path
-        d={`M${terminal} ${y - 7} q12 7 0 14 z`}
-        fill="currentColor"
-        opacity={0.4}
-        stroke="none"
-      />
-
-      {/* Vesicles crossing the cleft, one after the other. */}
-      {VESICLES.map((vesicle) => (
-        <circle
-          key={vesicle}
-          cx={animated ? terminal + 4 : terminal + 4 + vesicle * 5}
-          cy={y}
-          r="2.2"
-          fill="#5FA8D3"
-        >
-          {animated && (
-            <>
-              <animate
-                attributeName="cx"
-                values={`${terminal + 4};${to + 9}`}
-                dur="1.8s"
-                begin={`${vesicle * 0.6}s`}
-                repeatCount="indefinite"
-              />
-              <animate
-                attributeName="opacity"
-                values="0;1;1;0"
-                dur="1.8s"
-                begin={`${vesicle * 0.6}s`}
-                repeatCount="indefinite"
-              />
-            </>
-          )}
-        </circle>
-      ))}
-    </g>
-  );
-}
-
 /**
  * @param {{ current: 'triage' | 'reading' | 'authors', subtitle: string }} props
  */
 export default function SuiteNav({ current, subtitle }) {
   const stage = STAGES.find((item) => item.key === current) ?? STAGES[0];
-  // Respect the OS setting: a header that pulses forever is a real problem for
-  // vestibular disorders, and the diagram reads the same standing still.
-  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const width = cellX(STAGES.length - 1) + CELL.radius + 24;
 
   return (
-    <AppBar position="static" color="primary" elevation={0}>
-      <Toolbar className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <div className="min-w-0">
+    <AppBar position="static" color="primary" elevation={0} className="relative overflow-hidden">
+      {/* Decorative, and behind everything: pointer events are re-enabled on the
+          cells themselves so the neurons stay clickable. */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <NeuralNetwork current={current} stages={STAGES} />
+      </div>
+
+      {/* The drawing is cropped to fill (see preserveAspectRatio in
+          NeuralNetwork); the header has to stay tall enough that the crop keeps
+          the cell labels inside it. */}
+      <Toolbar className="relative min-h-[9rem] flex-col items-start justify-center gap-1 py-5 sm:min-h-[10rem]">
+        <div className="max-w-xl">
           <Typography
             variant="overline"
             component="p"
@@ -196,43 +67,30 @@ export default function SuiteNav({ current, subtitle }) {
           >
             litpipe
           </Typography>
-          <Typography variant="h1" component="h1" className="break-words text-white">
+          <Typography
+            variant="h1"
+            component="h1"
+            className="break-words text-white drop-shadow-[0_2px_10px_rgba(8,25,42,0.9)]"
+          >
             {stage.name}
           </Typography>
-          <Typography variant="body2" className="break-words text-white/80">
+          <Typography
+            variant="body2"
+            className="break-words text-white/85 drop-shadow-[0_1px_8px_rgba(8,25,42,0.9)]"
+          >
             {subtitle}
           </Typography>
         </div>
 
-        <nav aria-label="litpipe pipeline" className="w-full shrink-0 sm:w-auto">
-          {/* The drawing is decorative; the links below carry the meaning. */}
-          <svg
-            viewBox={`0 0 ${width} 72`}
-            className="h-16 w-full max-w-[26rem] text-white sm:w-[26rem]"
-            aria-hidden="true"
-            focusable="false"
-          >
-            {STAGES.slice(0, -1).map((item, index) => (
-              <Synapse key={`synapse-${item.key}`} index={index} animated={!reduceMotion} />
-            ))}
-            {STAGES.map((item, index) =>
-              item.key === current ? (
-                <Neuron key={item.key} index={index} stage={item} isCurrent />
-              ) : (
-                // Clickable with a pointer; the keyboard path is the list below,
-                // so this one stays out of the tab order.
-                <a key={item.key} href={item.url} tabIndex={-1} className="cursor-pointer">
-                  <Neuron index={index} stage={item} isCurrent={false} />
-                </a>
-              ),
-            )}
-          </svg>
-
+        <nav aria-label="litpipe pipeline" className="mt-1">
           <ol className="m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-1 p-0">
             {STAGES.map((item, index) => (
-              // Hidden while the drawing says the same thing, but revealed on
-              // keyboard focus: an invisible focus ring is a trap.
-              <li key={item.key} className="sr-only focus-within:not-sr-only">
+              // On a narrow screen the drawing is cropped to a single cell, so
+              // the links carry the navigation; from `sm` up the neurons are
+              // visible and clickable and the list steps back to screen
+              // readers — reappearing on keyboard focus, since an invisible
+              // focus ring is a trap.
+              <li key={item.key} className="not-sr-only sm:sr-only sm:focus-within:not-sr-only">
                 {item.key === current ? (
                   <span aria-current="page" className="text-xs font-semibold text-white">
                     {index + 1}. {item.name} (you are here)
@@ -247,7 +105,7 @@ export default function SuiteNav({ current, subtitle }) {
                     // MUI owns it — see the styling boundary in the README.
                     color="inherit"
                     underline="hover"
-                    className="text-xs opacity-80 hover:opacity-100"
+                    className="text-xs opacity-90 hover:opacity-100"
                   >
                     {index + 1}. {item.name}
                   </Link>
