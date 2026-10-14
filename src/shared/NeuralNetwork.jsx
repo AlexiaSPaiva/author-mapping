@@ -285,6 +285,7 @@ export default function NeuralNetwork({ current, stages }) {
             </g>
 
             <text
+              className="neuron-label"
               x={cell.cx}
               // Close under the soma on purpose: this is the part of the frame
               // the crop keeps at every viewport width.

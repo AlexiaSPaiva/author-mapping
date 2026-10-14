@@ -4,6 +4,8 @@
 
 **▶ Live app: https://alexiaspaiva.github.io/author-mapping/**
 
+New here? Open the app and click **Load an example** to see it working on sample data in one click.
+
 Find out who publishes on your topic. Searches [OpenAlex](https://openalex.org) from your research profile, groups the authors it finds by criteria you choose, and draws their co-authorship network.
 
 > **Stage 3 of 3 — litpipe**

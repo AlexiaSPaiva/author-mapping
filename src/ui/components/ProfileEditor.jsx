@@ -6,11 +6,11 @@ import { useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
-import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 
+import { Section } from '../../shared/layout.jsx';
 import { LIMITS, parseProfileJson } from '../../shared/researchProfile.js';
 import { DOCUMENT_ACCEPT, extractText, isDocument } from '../../services/documentImport.js';
 import { downloadJson, readTextFile } from '../../services/fileIo.js';
@@ -19,9 +19,16 @@ import { downloadJson, readTextFile } from '../../services/fileIo.js';
  * @param {{
  *   profile: import('../../shared/researchProfile.js').ResearchProfile,
  *   onChange: (profile: import('../../shared/researchProfile.js').ResearchProfile) => void,
+ *   step?: number,
+ *   description?: string,
  * }} props
  */
-export default function ProfileEditor({ profile, onChange }) {
+export default function ProfileEditor({
+  profile,
+  onChange,
+  step,
+  description = 'Describe what you are researching. All three litpipe stages read this same profile.',
+}) {
   const fileInput = useRef(null);
   const [errors, setErrors] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -66,14 +73,7 @@ export default function ProfileEditor({ profile, onChange }) {
   };
 
   return (
-    <Paper component="section" aria-labelledby="profile-heading" className="p-4 sm:p-6">
-      <Typography id="profile-heading" variant="h2" component="h2" className="mb-1">
-        Research profile
-      </Typography>
-      <Typography variant="body2" color="text.secondary" className="mb-5">
-        Every article is compared against this text. All three litpipe stages read the same profile.
-      </Typography>
-
+    <Section step={step} id="profile-heading" title="Research profile" description={description}>
       <TextField
         label="Research topic"
         value={profile.topic}
@@ -155,6 +155,6 @@ export default function ProfileEditor({ profile, onChange }) {
           tabIndex={-1}
         />
       </div>
-    </Paper>
+    </Section>
   );
 }

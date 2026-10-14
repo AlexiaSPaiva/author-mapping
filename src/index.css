@@ -2,3 +2,11 @@
    tailwind.config.js, where preflight is disabled. */
 @tailwind components;
 @tailwind utilities;
+
+/* On a phone the drawing is cropped to one cell and its label would collide with
+   the title; the stage pills in SuiteNav carry the navigation there instead. */
+@media (max-width: 639.98px) {
+  .neuron-label {
+    display: none;
+  }
+}

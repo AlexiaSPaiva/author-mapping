@@ -4,7 +4,6 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import MenuItem from '@mui/material/MenuItem';
-import Paper from '@mui/material/Paper';
 import Slider from '@mui/material/Slider';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
@@ -18,6 +17,7 @@ import {
 } from '../../domain/grouping.js';
 import { createProfile, profileToQuery, validateProfile } from '../../shared/researchProfile.js';
 import MethodDisclaimer from '../../shared/MethodDisclaimer.jsx';
+import { EmptyState, ExampleBanner, Section, SuiteFooter, icons } from '../../shared/layout.jsx';
 import SuiteNav from '../../shared/SuiteNav.jsx';
 import { downloadText, toCsv } from '../../services/fileIo.js';
 import { fetchWorks } from '../../services/openalex.js';
@@ -73,8 +73,8 @@ export default function App() {
   );
   const groups = useMemo(() => groupAuthors(filtered, criterion, THIS_YEAR), [filtered, criterion]);
 
-  const search = async () => {
-    const searchText = profileToQuery(profile);
+  const search = async (fromProfile = profile) => {
+    const searchText = profileToQuery(fromProfile);
     if (searchText.trim().length < 3) {
       setStatus({ loading: false, error: 'Fill in the research topic first.', notice: null });
       return;
@@ -111,6 +111,16 @@ export default function App() {
         setStatus({ loading: false, error: 'Unexpected error while searching.', notice: null });
       }
     }
+  };
+
+  /** A ready-made profile, searched straight away, so a visitor sees results in one click. */
+  const loadExample = () => {
+    const example = createProfile(
+      'Differentiating dementia etiologies from longitudinal cognitive decline and behavioural symptoms in ageing cohorts',
+      ['Machine learning models for dementia subtype classification'],
+    );
+    setProfile(example);
+    search(example);
   };
 
   const exportCsv = () => {
@@ -151,26 +161,43 @@ export default function App() {
         subtitle="Find and group the people publishing on your topic, from OpenAlex"
       />
 
-      <Container maxWidth="lg" component="main" className="py-6">
-        <MethodDisclaimer title="What “relevant author” means here — and what it does not">
-          Every ranking on this page is <strong>bibliometric</strong>: how many papers an author has
-          in the search results, how often those papers are cited, who they publish with, and when
-          they were active.{' '}
-          <strong>None of it measures the quality of anyone&apos;s science.</strong> Volume and
-          citation counts carry well-documented biases towards English-language work, towards
-          wealthy countries and well-funded institutions, towards long careers over early-career
-          researchers, and towards fields that cite densely. Use this to find who to read and who to
-          write to — never to judge who is a good researcher.
+      <Container maxWidth="lg" component="main" className="py-6 sm:py-8">
+        <MethodDisclaimer
+          title="What “relevant author” means here — and what it does not"
+          summary={
+            <>
+              Every ranking here is <strong>bibliometric</strong> (papers, citations, co-authors).
+              None of it measures the quality of anyone&apos;s science.
+            </>
+          }
+        >
+          Volume and citation counts carry well-documented biases towards English-language work,
+          towards wealthy countries and well-funded institutions, towards long careers over
+          early-career researchers, and towards fields that cite densely. Use this to find who to
+          read and who to write to — never to judge who is a good researcher.
         </MethodDisclaimer>
 
+        {!profile.topic.trim() && works.length === 0 && (
+          <ExampleBanner onLoad={loadExample}>
+            Fill in a sample research profile and search OpenAlex with it, to see the co-authorship
+            network and the author groups straight away.
+          </ExampleBanner>
+        )}
+
         <div className="flex flex-col gap-5">
-          <ProfileEditor profile={profile} onChange={setProfile} />
+          <ProfileEditor
+            profile={profile}
+            onChange={setProfile}
+            step={1}
+            description="Describe your topic. It becomes the OpenAlex search, and all three litpipe stages read this same profile."
+          />
 
-          <Paper component="section" aria-labelledby="search-heading" className="p-4 sm:p-5">
-            <Typography id="search-heading" variant="h2" component="h2" className="mb-3">
-              Search and grouping
-            </Typography>
-
+          <Section
+            step={2}
+            id="search-heading"
+            title="Search and grouping"
+            description="Search OpenAlex with the profile, then group and filter the authors it finds."
+          >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <TextField
                 select
@@ -229,7 +256,7 @@ export default function App() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button variant="contained" onClick={search} disabled={status.loading}>
+              <Button variant="contained" onClick={() => search()} disabled={status.loading}>
                 {status.loading ? 'Searching…' : 'Search OpenAlex'}
               </Button>
               <Button
@@ -253,7 +280,7 @@ export default function App() {
                 {status.notice}
               </Alert>
             )}
-          </Paper>
+          </Section>
 
           {works.length > 0 && (
             <>
@@ -266,11 +293,9 @@ export default function App() {
                   {groups.length === 1 ? '' : 's'}
                 </Typography>
                 {filtered.length === 0 ? (
-                  <Paper className="p-6 text-center">
-                    <Typography color="text.secondary">
-                      No author matches these filters. Try lowering the minimum works.
-                    </Typography>
-                  </Paper>
+                  <EmptyState compact title="No author matches these filters">
+                    Try lowering the minimum works, or clearing the name filter.
+                  </EmptyState>
                 ) : (
                   <AuthorGroups groups={groups} allAuthors={filtered} edges={edges} />
                 )}
@@ -279,27 +304,25 @@ export default function App() {
           )}
 
           {works.length === 0 && !status.loading && (
-            <Paper className="p-8 text-center">
-              <Typography color="text.secondary">
-                Describe your topic above, then search OpenAlex to see who publishes on it.
-              </Typography>
-            </Paper>
+            <EmptyState icon={icons.people} title="No authors yet">
+              Describe your topic in step 1, then search OpenAlex in step 2 to see who publishes on
+              it, who they write with and how they group.
+            </EmptyState>
           )}
         </div>
 
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          component="footer"
-          className="mt-8 block"
-        >
-          Stage 3 of 3 of litpipe · data from{' '}
-          <a href="https://openalex.org" target="_blank" rel="noopener noreferrer">
-            OpenAlex
-          </a>{' '}
-          (CC0) · bibliometric counts, not quality measures ·{' '}
-          <a href="https://github.com/AlexiaSPaiva/author-mapping">source</a>
-        </Typography>
+        <SuiteFooter
+          current="authors"
+          note={
+            <>
+              Stage 3 of 3 · data from{' '}
+              <a href="https://openalex.org" target="_blank" rel="noopener noreferrer">
+                OpenAlex
+              </a>{' '}
+              (CC0) · bibliometric counts, not quality measures.
+            </>
+          }
+        />
       </Container>
     </>
   );
