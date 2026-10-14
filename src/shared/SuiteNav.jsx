@@ -84,7 +84,7 @@ export default function SuiteNav({ current, subtitle }) {
       {/* The drawing is cropped to fill (see preserveAspectRatio in
           NeuralNetwork); the header has to stay tall enough that the crop keeps
           the cell labels inside it. */}
-      <Toolbar className="relative min-h-[9rem] flex-col items-start justify-center gap-2 py-5 sm:min-h-[10rem]">
+      <Toolbar className="relative min-h-[9rem] flex-col items-start justify-center gap-2 py-5 sm:min-h-[10rem] lg:min-h-[11rem] 2xl:min-h-[12.5rem]">
         <div className="max-w-xl pr-20 sm:pr-0">
           <Typography
             variant="overline"

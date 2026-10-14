@@ -139,7 +139,17 @@ function growDendrite(
     x + Math.cos(angle) * length * 0.5 - Math.sin(angle) * bend,
     y + Math.sin(angle) * length * 0.5 + Math.cos(angle) * bend,
   ];
-  const line = Array.from({ length: 7 }, (_value, index) => quad([x, y], control, end, index / 6));
+  // Real neurites wander: a smooth bend plus small, low-frequency kinks.
+  const nx = -Math.sin(angle);
+  const ny = Math.cos(angle);
+  let drift = 0;
+  const line = Array.from({ length: 9 }, (_value, index) => {
+    const t = index / 8;
+    const [px, py] = quad([x, y], control, end, t);
+    if (index > 0 && index < 8) drift += (random() - 0.5) * length * 0.07;
+    const damp = Math.sin(t * Math.PI);
+    return [px + nx * drift * damp, py + ny * drift * damp];
+  });
   const endWidth = Math.max(0.35, width * 0.68);
   out.push({
     d: taperedPath(line, width, endWidth),
@@ -266,7 +276,7 @@ export function pyramidalNeuron({
       angle,
       length: (17 + random() * 13) * scale,
       width: (2 + random() * 0.8) * scale,
-      maxOrder: 3,
+      maxOrder: 4,
       out: dendrites,
       curl: 0.45,
     });
@@ -352,7 +362,20 @@ export function axonPath({ from, to, seed = 1, terminal = true }) {
     }
   }
 
-  return { hillock, shaft, collateral, arbor, boutons, end: points[points.length - 1].map(r1) };
+  // En passant varicosities: small swellings along an unmyelinated axon.
+  const varicosities = points
+    .filter((_point, index) => index > 2 && index < samples - 1 && index % 3 === 0)
+    .map((point) => ({ x: r1(point[0]), y: r1(point[1]), r: r2(0.9 + random() * 0.5) }));
+
+  return {
+    hillock,
+    shaft,
+    collateral,
+    arbor,
+    boutons,
+    varicosities,
+    end: points[points.length - 1].map(r1),
+  };
 }
 
 /**

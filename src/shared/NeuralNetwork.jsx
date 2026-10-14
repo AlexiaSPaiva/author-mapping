@@ -13,9 +13,10 @@
  * boutons release, and the next cell receives it. Identical file in the three apps.
  */
 import { useEffect, useRef } from 'react';
-import { animate, createScope, createTimeline, svg } from 'animejs';
+import { animate, createScope, createTimeline, stagger, svg } from 'animejs';
 
 import { axonPath, backgroundNeurons, pyramidalNeuron } from './neuralGeometry.js';
+import SynapseInset from './SynapseInset.jsx';
 
 /**
  * Drawing space. The SVG fills the header (slice), so a wide, shallow frame is
@@ -27,9 +28,10 @@ export const FRAME = { width: 1200, height: 150 };
 
 /**
  * Where the three cell bodies sit, left to right, pushed into the right-hand
- * half of the frame: the left half is where the title sits.
+ * half of the frame: the left half is where the title sits. The gap between the
+ * second and third cells holds the magnified synapse.
  */
-const CELL_X = [520, 800, 1080];
+const CELL_X = [480, 680, 1040];
 const CELL_Y = 74;
 
 /** How far past the last cell the outgoing axon runs before leaving the frame. */
@@ -51,6 +53,10 @@ const CELLS = CELL_X.map((cx, index) => {
   return { cx, cy: CELL_Y, ...neuron, axon };
 });
 
+/** The lens over the synapse between the second and third cells. */
+const LENS = { x: 860, y: 56 };
+const SYNAPSE = { x: CELLS[1].axon.end[0] + 3, y: CELLS[1].axon.end[1] };
+
 /** Fluorescent label colours: bright core, cooler periphery. */
 const MEMBRANE = '#8CCFF0';
 const CORE = '#DDF3FF';
@@ -69,24 +75,20 @@ export default function NeuralNetwork({ current, stages }) {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
 
     scope.current = createScope({ root }).add(() => {
-      const timeline = createTimeline({ loop: true, loopDelay: 1400 });
+      const timeline = createTimeline({ loop: true, loopDelay: 1600 });
 
-      CELLS.forEach((_cell, index) => {
-        const start = index * 1550;
+      /** One cell: dendritic input, somatic firing, the action potential, release. */
+      const fire = (index, start) => {
         const spike = root.current.querySelector(`#ap-${index}`);
         if (!spike) return;
         const [drawable] = svg.createDrawable(spike);
-
         timeline
-          // Synaptic input reaches the dendrites (spontaneous for the first cell).
           .add(`#input-${index}`, { opacity: [0, 0.5, 0], duration: 800, ease: 'inOutSine' }, start)
-          // The soma integrates and fires.
           .add(
             `#fire-${index}`,
             { opacity: [0, 0.9, 0], duration: 700, ease: 'out(3)' },
             start + 380,
           )
-          // The action potential travels down the axon as a short bright front.
           .add(
             drawable,
             { draw: ['0 0', '0 0.12', '0.88 1', '1 1'], duration: 1050, ease: 'linear' },
@@ -103,13 +105,79 @@ export default function NeuralNetwork({ current, stages }) {
             },
             start + 560,
           )
-          // Vesicle release at the boutons.
           .add(
             `#boutons-${index}`,
             { opacity: [0.5, 1, 0.5], duration: 520, ease: 'out(2)' },
             start + 1500,
           );
-      });
+      };
+
+      const label = (id, at, duration = 900) =>
+        timeline.add(`#lab-${id}`, { opacity: [0.55, 1, 0.55], duration, ease: 'inOutSine' }, at);
+
+      fire(0, 0);
+      fire(1, 1550);
+
+      // The magnified synapse, slowed down so each step can be read.
+      const release = 1550 + 1560;
+      timeline
+        // 1. The action potential depolarises the terminal.
+        .add('#syn-depol', { opacity: [0, 0.55, 0], duration: 700, ease: 'out(2)' }, release)
+        // 2. Voltage-gated Ca²⁺ channels open and calcium flows in.
+        .add(
+          '.syn-ca',
+          {
+            opacity: [0, 1, 0],
+            translateY: [0, -12],
+            duration: 800,
+            delay: stagger(60),
+            ease: 'out(2)',
+          },
+          release + 250,
+        )
+        // 3. A docked vesicle fuses with the membrane…
+        .add('#syn-dock-0', { translateY: [0, 3.4], duration: 260, ease: 'in(2)' }, release + 800)
+        .add('#syn-dock-0', { opacity: [1, 0], duration: 260 }, release + 1060)
+        // 4. …and neurotransmitter diffuses across the cleft to the receptors.
+        .add(
+          '.syn-nt',
+          {
+            opacity: [
+              { to: 1, duration: 120 },
+              { to: 1, duration: 700 },
+              { to: 0, duration: 380 },
+            ],
+            translateX: (el) => [0, Number(el.dataset.dx)],
+            translateY: (el) => [0, Number(el.dataset.dy)],
+            duration: 900,
+            delay: stagger(28),
+            ease: 'out(2)',
+          },
+          release + 1080,
+        )
+        // 5. Receptors open and the spine depolarises (an EPSP).
+        .add('#syn-rec', { opacity: [0.75, 1, 0.75], duration: 600 }, release + 1850)
+        .add(
+          '#syn-epsp',
+          { opacity: [0, 0.5, 0], duration: 900, ease: 'inOutSine' },
+          release + 2000,
+        )
+        // The vesicle membrane is recycled and a new one docks.
+        .add(
+          '#syn-dock-0',
+          { translateY: [3.4, 0], opacity: [0, 1], duration: 500 },
+          release + 3000,
+        );
+
+      label('terminal', release);
+      label('calcium', release + 250);
+      label('vesicles', release + 800);
+      label('cleft', release + 1080);
+      label('transmitter', release + 1080, 1100);
+      label('receptors', release + 1850);
+      label('spine', release + 2000, 1000);
+
+      fire(2, release + 2150);
 
       // The out-of-focus layer drifts very slowly, like a stage being nudged.
       animate('#depth', {
@@ -178,6 +246,11 @@ export default function NeuralNetwork({ current, stages }) {
         <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
           <feGaussianBlur stdDeviation="2.6" />
         </filter>
+        {/* Sensor grain, as in a real micrograph. */}
+        <filter id="grain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" />
+          <feColorMatrix values="0 0 0 0 0.75  0 0 0 0 0.88  0 0 0 0 1  0 0 0 0.55 0" />
+        </filter>
         <filter id="defocus-near">
           <feGaussianBlur stdDeviation="1.3" />
         </filter>
@@ -204,6 +277,8 @@ export default function NeuralNetwork({ current, stages }) {
         ))}
       </g>
 
+      <rect width={FRAME.width} height={FRAME.height} filter="url(#grain)" opacity="0.07" />
+
       <rect width={FRAME.width} height={FRAME.height} fill="url(#text-veil)" />
 
       {/* Axons: hillock, shaft, collateral, terminal arbor and boutons. */}
@@ -215,6 +290,11 @@ export default function NeuralNetwork({ current, stages }) {
               <path d={cell.axon.shaft} strokeWidth="0.9" />
               <path d={cell.axon.collateral} strokeWidth="0.55" opacity="0.7" />
               <path d={cell.axon.arbor} strokeWidth="0.6" />
+            </g>
+            <g fill={MEMBRANE}>
+              {cell.axon.varicosities.map((v, vIndex) => (
+                <circle key={vIndex} cx={v.x} cy={v.y} r={v.r} />
+              ))}
             </g>
             <g id={`boutons-${index}`} fill={CORE} opacity="0.5">
               {cell.axon.boutons.map((bouton, boutonIndex) => (
@@ -314,6 +394,8 @@ export default function NeuralNetwork({ current, stages }) {
           </a>
         );
       })}
+
+      <SynapseInset cx={LENS.x} cy={LENS.y} target={SYNAPSE} />
     </svg>
   );
 }

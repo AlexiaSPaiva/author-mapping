@@ -10,3 +10,10 @@
     display: none;
   }
 }
+
+/* The magnified synapse needs room for its labels: wide screens only. */
+@media (max-width: 1179.98px) {
+  .synapse-inset {
+    display: none;
+  }
+}
