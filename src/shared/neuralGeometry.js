@@ -1,13 +1,19 @@
 /**
- * The shapes behind the header drawing, built to read as a neuroanatomy figure
- * rather than an illustration: a dendritic arbor that branches and thins the way
- * a real one does, and a myelinated axon whose nodes of Ranvier are where the
- * impulse actually jumps.
+ * Morphology behind the header drawing. The cells are modelled on cortical
+ * pyramidal neurons as they appear in a fluorescence micrograph:
  *
- * Everything here is pure and seeded. Two reasons: the drawing must be identical
- * on every render (React would otherwise reshuffle the whole network on each
- * state change, which reads as flicker), and geometry this fiddly is only worth
- * writing if it can be tested without a browser.
+ * - an irregular, roughly triangular soma that flows into its dendrites (no
+ *   cartoon ellipse with a coloured nucleus);
+ * - one thick apical dendrite and several basal dendrites, each a filled shape
+ *   that tapers continuously and branches asymmetrically — a parent continues
+ *   while a thinner side branch leaves it, and some branches just end;
+ * - dendritic spines on the distal branches;
+ * - an axon that leaves through a tapered hillock, gives off a collateral and
+ *   ends in a small terminal arbor with synaptic boutons.
+ *
+ * Everything is pure and seeded: the drawing is identical on every render (React
+ * would otherwise reshuffle the network on each state change), and geometry this
+ * fiddly is only worth writing if it can be tested without a browser.
  *
  * Identical file in the three litpipe apps.
  */
@@ -33,159 +39,340 @@ export function seededRandom(seed) {
 /** Rounds to one decimal: shorter path strings, no visible loss. */
 const r1 = (value) => Math.round(value * 10) / 10;
 
-/** Opacity needs the second decimal — at one, 0.17 rounds up to a visible 0.2. */
+/** Opacity needs the second decimal. */
 const r2 = (value) => Math.round(value * 100) / 100;
 
-/**
- * The out-of-focus tissue the cells sit in. Kept deliberately faint and thin:
- * in a figure, background structure is context, not decoration.
- *
- * @param {{ width: number, height: number, count?: number, seed?: number }} options
- * @returns {{ d: string, width: number, opacity: number }[]}
- */
-export function backgroundFibres({ width, height, count = 22, seed = 7 }) {
-  const random = seededRandom(seed);
-  const fibres = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const startY = random() * height * 1.4 - height * 0.2;
-    const endY = random() * height * 1.4 - height * 0.2;
-    const sag = (random() - 0.5) * height * 1.1;
-    const startX = -width * 0.1 - random() * width * 0.1;
-    const endX = width * 1.1 + random() * width * 0.1;
-
-    fibres.push({
-      d:
-        `M${r1(startX)} ${r1(startY)} ` +
-        `C ${r1(width * 0.3)} ${r1(startY + sag)}, ` +
-        `${r1(width * 0.7)} ${r1(endY - sag)}, ` +
-        `${r1(endX)} ${r1(endY)}`,
-      width: r1(0.4 + random() * 0.9),
-      opacity: r2(0.05 + random() * 0.12),
-    });
-  }
-
-  return fibres;
+/** Point on a quadratic Bézier. */
+function quad(p0, c, p1, t) {
+  const u = 1 - t;
+  return [
+    u * u * p0[0] + 2 * u * t * c[0] + t * t * p1[0],
+    u * u * p0[1] + 2 * u * t * c[1] + t * t * p1[1],
+  ];
 }
 
 /**
- * A dendritic arbor: primary branches leaving the soma, each splitting into two
- * at every order, thinning as it goes. Real arbors taper and bifurcate; a fan of
- * equal-weight lines does not read as tissue.
+ * A filled outline around a centre line whose width goes from `w0` to `w1`:
+ * the way a real neurite tapers, instead of a stroke of constant width.
  *
- * @param {{
- *   cx: number, cy: number,
- *   primary?: number, orders?: number, reach?: number,
- *   seed?: number, skipRight?: boolean, flatten?: number,
- * }} options
- * @returns {{ d: string, width: number, order: number }[]}
+ * @param {number[][]} points centre line, at least two points
+ * @param {number} w0 width at the first point
+ * @param {number} w1 width at the last point
+ * @returns {string} closed SVG path
  */
-export function dendriteTree({
+export function taperedPath(points, w0, w1) {
+  const left = [];
+  const right = [];
+  const last = points.length - 1;
+  points.forEach((point, index) => {
+    const prev = points[Math.max(0, index - 1)];
+    const next = points[Math.min(last, index + 1)];
+    const dx = next[0] - prev[0];
+    const dy = next[1] - prev[1];
+    const length = Math.hypot(dx, dy) || 1;
+    const half = (w0 + (w1 - w0) * (index / last)) / 2;
+    const nx = (-dy / length) * half;
+    const ny = (dx / length) * half;
+    left.push(`${r1(point[0] + nx)} ${r1(point[1] + ny)}`);
+    right.push(`${r1(point[0] - nx)} ${r1(point[1] - ny)}`);
+  });
+  const tip = points[last];
+  return `M${left.join(' L')} L${r1(tip[0])} ${r1(tip[1])} L${right.reverse().join(' L')} Z`;
+}
+
+/**
+ * Soma outline: a rounded, irregular triangle pointing towards the apical
+ * dendrite, closed with a Catmull-Rom spline so it has no corners.
+ *
+ * @param {{ cx: number, cy: number, size?: number, apical?: number, seed?: number }} options
+ * @returns {string} closed SVG path
+ */
+export function somaPath({ cx, cy, size = 11, apical = -Math.PI / 2, seed = 1 }) {
+  const random = seededRandom(seed);
+  const count = 9;
+  const points = Array.from({ length: count }, (_value, index) => {
+    const angle = (index / count) * Math.PI * 2;
+    // Pulled out towards the apical pole, flattened at the base: pyramidal.
+    const toward = Math.cos(angle - apical);
+    const radius =
+      size * (0.86 + 0.42 * Math.max(0, toward) ** 3 - 0.08 * toward) * (0.9 + random() * 0.2);
+    return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius * 0.92];
+  });
+
+  let d = `M${r1(points[0][0])} ${r1(points[0][1])}`;
+  for (let index = 0; index < count; index += 1) {
+    const p0 = points[(index - 1 + count) % count];
+    const p1 = points[index];
+    const p2 = points[(index + 1) % count];
+    const p3 = points[(index + 2) % count];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C ${r1(c1[0])} ${r1(c1[1])}, ${r1(c2[0])} ${r1(c2[1])}, ${r1(p2[0])} ${r1(p2[1])}`;
+  }
+  return `${d} Z`;
+}
+
+/**
+ * @typedef {object} Neurite
+ * @property {string} d       filled, tapered outline
+ * @property {number} order   1 = leaves the soma
+ * @property {number[][]} line centre line (used to place spines)
+ * @property {number} width   width at the start
+ */
+
+/**
+ * Grows one dendrite. Branching is asymmetric on purpose: at each point the
+ * parent carries on, roughly in its own direction, and a thinner daughter leaves
+ * at an angle; branches can terminate early. Widths follow a Rall-like falloff.
+ *
+ * @param {() => number} random
+ * @param {{ x: number, y: number, angle: number, length: number, width: number,
+ *   maxOrder: number, out: Neurite[], order?: number, curl?: number }} options
+ */
+function growDendrite(
+  random,
+  { x, y, angle, length, width, maxOrder, out, order = 1, curl = 0.35 },
+) {
+  const end = [x + Math.cos(angle) * length, y + Math.sin(angle) * length];
+  const bend = (random() - 0.5) * length * curl;
+  const control = [
+    x + Math.cos(angle) * length * 0.5 - Math.sin(angle) * bend,
+    y + Math.sin(angle) * length * 0.5 + Math.cos(angle) * bend,
+  ];
+  const line = Array.from({ length: 7 }, (_value, index) => quad([x, y], control, end, index / 6));
+  const endWidth = Math.max(0.35, width * 0.68);
+  out.push({
+    d: taperedPath(line, width, endWidth),
+    order,
+    line: line.map((p) => [r1(p[0]), r1(p[1])]),
+    width: r1(width),
+  });
+
+  if (order >= maxOrder) return;
+  // Distal branches are more likely to just stop, as in a real arbor.
+  if (order > 1 && random() < 0.18 * order) return;
+
+  const heading = Math.atan2(end[1] - control[1], end[0] - control[0]);
+  const side = random() < 0.5 ? -1 : 1;
+  growDendrite(random, {
+    x: end[0],
+    y: end[1],
+    angle: heading + side * (0.08 + random() * 0.22),
+    length: length * (0.7 + random() * 0.25),
+    width: endWidth * 0.92,
+    maxOrder,
+    out,
+    order: order + 1,
+    curl,
+  });
+  growDendrite(random, {
+    x: end[0],
+    y: end[1],
+    angle: heading - side * (0.45 + random() * 0.5),
+    length: length * (0.45 + random() * 0.3),
+    width: endWidth * 0.62,
+    maxOrder,
+    out,
+    order: order + 1,
+    curl,
+  });
+}
+
+/**
+ * Spines: short protrusions with a small head, along the distal dendrites
+ * (order 2 and up), returned as a single path so hundreds of them stay cheap.
+ *
+ * @param {Neurite[]} dendrites
+ * @param {number} seed
+ * @returns {{ necks: string, heads: string, count: number }}
+ */
+export function dendriticSpines(dendrites, seed = 5) {
+  const random = seededRandom(seed);
+  let necks = '';
+  let heads = '';
+  let count = 0;
+  for (const segment of dendrites) {
+    if (segment.order < 2) continue;
+    for (let index = 1; index < segment.line.length; index += 1) {
+      const [ax, ay] = segment.line[index - 1];
+      const [bx, by] = segment.line[index];
+      const length = Math.hypot(bx - ax, by - ay) || 1;
+      const steps = Math.floor(length / 2.6);
+      for (let step = 0; step < steps; step += 1) {
+        if (random() < 0.45) continue;
+        const t = (step + random()) / Math.max(1, steps);
+        const px = ax + (bx - ax) * t;
+        const py = ay + (by - ay) * t;
+        const side = random() < 0.5 ? -1 : 1;
+        const spineLength = 1.1 + random() * 1.5;
+        const tilt = (random() - 0.5) * 0.9;
+        const nx = (-(by - ay) / length) * side;
+        const ny = ((bx - ax) / length) * side;
+        const ex = px + (nx * Math.cos(tilt) - ny * Math.sin(tilt)) * spineLength;
+        const ey = py + (nx * Math.sin(tilt) + ny * Math.cos(tilt)) * spineLength;
+        necks += `M${r1(px)} ${r1(py)} L${r1(ex)} ${r1(ey)}`;
+        heads += `M${r1(ex)} ${r1(ey)} h0.01`;
+        count += 1;
+      }
+    }
+  }
+  return { necks, heads, count };
+}
+
+/**
+ * One pyramidal neuron: soma, apical and basal dendrites, spines.
+ *
+ * @param {{ cx: number, cy: number, scale?: number, seed?: number, rotation?: number,
+ *   basal?: number, apicalLength?: number }} options
+ */
+export function pyramidalNeuron({
   cx,
   cy,
-  primary = 7,
-  orders = 3,
-  reach = 62,
-  seed = 3,
-  skipRight = true,
-  flatten = 0.66,
+  scale = 1,
+  seed = 1,
+  rotation = 0,
+  basal = 5,
+  apicalLength = 34,
 }) {
   const random = seededRandom(seed);
-  const segments = [];
+  const dendrites = [];
+  const up = -Math.PI / 2 + rotation + (random() - 0.5) * 0.25;
+  const size = 9.5 * scale;
 
-  /** One segment, then its two children, until the order budget runs out. */
-  const grow = (x, y, angle, length, order) => {
-    // Curvature falls with order: trunks sweep, twigs are nearly straight.
-    const bend = (random() - 0.5) * length * (0.5 / order);
-    const endX = x + Math.cos(angle) * length;
-    const endY = y + Math.sin(angle) * length * flatten;
-    const controlX = x + Math.cos(angle) * length * 0.55 - Math.sin(angle) * bend;
-    const controlY = y + Math.sin(angle) * length * 0.55 * flatten + Math.cos(angle) * bend;
+  // Apical dendrite: thick, long, few oblique branches, a tuft at the top.
+  growDendrite(random, {
+    x: cx + Math.cos(up) * size * 0.9,
+    y: cy + Math.sin(up) * size * 0.9,
+    angle: up,
+    length: apicalLength * scale,
+    width: 4.2 * scale,
+    maxOrder: 4,
+    out: dendrites,
+    curl: 0.18,
+  });
 
-    segments.push({
-      d: `M${r1(x)} ${r1(y)} Q ${r1(controlX)} ${r1(controlY)}, ${r1(endX)} ${r1(endY)}`,
-      // 2.1, 1.4, 0.9, 0.6 … tapering by order, as in a real arbor.
-      width: r1(2.1 / (1 + (order - 1) * 0.55)),
-      order,
+  // Basal dendrites: shorter and thinner, radiating from the base of the soma.
+  for (let index = 0; index < basal; index += 1) {
+    const spread = Math.PI * 1.15;
+    const angle =
+      up +
+      Math.PI -
+      spread / 2 +
+      (index / Math.max(1, basal - 1)) * spread +
+      (random() - 0.5) * 0.35;
+    growDendrite(random, {
+      x: cx + Math.cos(angle) * size * 0.7,
+      y: cy + Math.sin(angle) * size * 0.7,
+      angle,
+      length: (17 + random() * 13) * scale,
+      width: (2 + random() * 0.8) * scale,
+      maxOrder: 3,
+      out: dendrites,
+      curl: 0.45,
     });
-
-    if (order >= orders) return;
-
-    const split = 0.34 + random() * 0.3;
-    grow(endX, endY, angle - split, length * (0.62 + random() * 0.12), order + 1);
-    grow(endX, endY, angle + split, length * (0.62 + random() * 0.12), order + 1);
-  };
-
-  for (let index = 0; index < primary; index += 1) {
-    // Leave the right-hand sector free: that is where the axon leaves, and a
-    // dendrite there would read as a fork in the signal path rather than input.
-    const spread = skipRight ? Math.PI * 1.3 : Math.PI * 2;
-    const offset = skipRight ? Math.PI * 0.35 : 0;
-    const angle = offset + (index / primary) * spread + (random() - 0.5) * 0.16;
-    grow(cx, cy, angle, reach * (0.62 + random() * 0.5), 1);
   }
 
-  return segments;
-}
+  // Oblique branches leave the apical trunk along its length, not only at its end.
+  const trunk = dendrites[0].line;
+  [0.32, 0.58, 0.8].forEach((t, index) => {
+    const at = trunk[Math.round(t * (trunk.length - 1))];
+    const side = index % 2 === 0 ? 1 : -1;
+    // Obliques head away from the soma at a shallow angle to the trunk.
+    growDendrite(random, {
+      x: at[0],
+      y: at[1],
+      angle: up + side * (0.55 + random() * 0.35),
+      length: (13 + random() * 9) * scale,
+      width: (1.5 - index * 0.25) * scale,
+      maxOrder: 3,
+      out: dendrites,
+      order: 2,
+      curl: 0.7,
+    });
+  });
 
-/**
- * The axon between two stages, as a cubic curve. Returned as points rather than
- * a path string so the myelin sheath and the nodes can be placed along it.
- *
- * @param {{ fromX: number, toX: number, y: number, sag?: number }} options
- * @returns {{ p0: number[], p1: number[], p2: number[], p3: number[] }}
- */
-export function axonCurve({ fromX, toX, y, sag = 13 }) {
-  const span = toX - fromX;
   return {
-    p0: [fromX, y],
-    p1: [fromX + span * 0.3, y - sag],
-    p2: [fromX + span * 0.7, y + sag],
-    p3: [toX, y],
+    soma: somaPath({ cx, cy, size, apical: up, seed: seed * 7 + 1 }),
+    dendrites,
+    spines: dendriticSpines(dendrites, seed * 13 + 3),
   };
 }
 
 /**
- * @param {ReturnType<typeof axonCurve>} curve
- * @returns {string} an SVG path
+ * The axon from one cell to the next: a tapered hillock, a thin and slightly
+ * wavy shaft, one collateral, and a terminal arbor with synaptic boutons.
+ *
+ * @param {{ from: number[], to: number[], seed?: number, terminal?: boolean }} options
  */
-export function pathFromCurve({ p0, p1, p2, p3 }) {
-  return (
-    `M${r1(p0[0])} ${r1(p0[1])} ` +
-    `C ${r1(p1[0])} ${r1(p1[1])}, ${r1(p2[0])} ${r1(p2[1])}, ${r1(p3[0])} ${r1(p3[1])}`
+export function axonPath({ from, to, seed = 1, terminal = true }) {
+  const random = seededRandom(seed);
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const nx = -dy / length;
+  const ny = dx / length;
+
+  // Hillock: the cone where the action potential starts.
+  const hillockEnd = [from[0] + (dx / length) * 9, from[1] + (dy / length) * 9];
+  const hillock = taperedPath(
+    [from, [(from[0] + hillockEnd[0]) / 2, (from[1] + hillockEnd[1]) / 2], hillockEnd],
+    4.4,
+    1,
   );
+
+  // Shaft: a gentle meander, sampled so the impulse can travel along it.
+  const points = [hillockEnd];
+  const samples = 14;
+  const phase = random() * Math.PI * 2;
+  for (let index = 1; index <= samples; index += 1) {
+    const t = index / samples;
+    const wave = Math.sin(t * Math.PI * 2.2 + phase) * 4.5 * Math.sin(t * Math.PI);
+    points.push([
+      hillockEnd[0] + (to[0] - hillockEnd[0]) * t + nx * wave,
+      hillockEnd[1] + (to[1] - hillockEnd[1]) * t + ny * wave,
+    ]);
+  }
+  const shaft = `M${points.map((p) => `${r1(p[0])} ${r1(p[1])}`).join(' L')}`;
+
+  // A collateral leaves around the first third and arborises briefly.
+  const base = points[Math.floor(samples * 0.35)];
+  const collateralEnd = [base[0] + dx * 0.12 + nx * 16, base[1] + dy * 0.12 + ny * 16 + 6];
+  const collateral = `M${r1(base[0])} ${r1(base[1])} Q ${r1(base[0] + nx * 10)} ${r1(base[1] + ny * 10 + 3)}, ${r1(collateralEnd[0])} ${r1(collateralEnd[1])}`;
+
+  const boutons = [];
+  let arbor = '';
+  if (terminal) {
+    const tip = points[points.length - 1];
+    for (let index = 0; index < 4; index += 1) {
+      const angle = Math.atan2(dy, dx) + (index - 1.5) * 0.55 + (random() - 0.5) * 0.3;
+      const reach = 6 + random() * 6;
+      const end = [tip[0] + Math.cos(angle) * reach, tip[1] + Math.sin(angle) * reach];
+      arbor += `M${r1(tip[0])} ${r1(tip[1])} L${r1(end[0])} ${r1(end[1])}`;
+      boutons.push({ x: r1(end[0]), y: r1(end[1]), r: r2(1.2 + random() * 0.7) });
+    }
+  }
+
+  return { hillock, shaft, collateral, arbor, boutons, end: points[points.length - 1].map(r1) };
 }
 
 /**
- * Point at parameter `t` along a cubic Bézier.
+ * Out-of-focus neurons behind the main ones: depth, as in a thick section seen
+ * through a confocal microscope.
  *
- * @param {ReturnType<typeof axonCurve>} curve
- * @param {number} t in [0, 1]
- * @returns {{ x: number, y: number }}
+ * @param {{ width: number, height: number, count?: number, seed?: number }} options
  */
-export function pointOnCurve({ p0, p1, p2, p3 }, t) {
-  const u = 1 - t;
-  const a = u * u * u;
-  const b = 3 * u * u * t;
-  const c = 3 * u * t * t;
-  const d = t * t * t;
-  return {
-    x: r1(a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0]),
-    y: r1(a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]),
-  };
-}
-
-/**
- * The nodes of Ranvier: the gaps between myelin sheaths, evenly spaced along the
- * axon. The impulse is redrawn at each one — that is what saltatory conduction
- * is, and it is why the spike in the header jumps instead of sliding.
- *
- * @param {ReturnType<typeof axonCurve>} curve
- * @param {number} [count]
- * @returns {{ x: number, y: number }[]}
- */
-export function ranvierNodes(curve, count = 5) {
-  return Array.from({ length: count }, (_value, index) =>
-    pointOnCurve(curve, (index + 1) / (count + 1)),
-  );
+export function backgroundNeurons({ width, height, count = 7, seed = 7 }) {
+  const random = seededRandom(seed);
+  return Array.from({ length: count }, (_value, index) => {
+    const neuron = pyramidalNeuron({
+      cx: r1(random() * width),
+      cy: r1(height * (0.15 + random() * 0.8)),
+      scale: 0.55 + random() * 0.35,
+      seed: seed * 31 + index * 101,
+      rotation: (random() - 0.5) * 1.6,
+      basal: 4,
+      apicalLength: 28,
+    });
+    return { ...neuron, opacity: r2(0.12 + random() * 0.16), blur: r1(1 + random() * 1.6) };
+  });
 }

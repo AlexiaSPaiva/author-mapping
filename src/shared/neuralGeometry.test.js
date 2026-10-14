@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  axonCurve,
-  backgroundFibres,
-  dendriteTree,
-  pathFromCurve,
-  pointOnCurve,
-  ranvierNodes,
+  axonPath,
+  backgroundNeurons,
+  dendriticSpines,
+  pyramidalNeuron,
   seededRandom,
+  somaPath,
+  taperedPath,
 } from './neuralGeometry.js';
 
 describe('seededRandom', () => {
@@ -27,68 +27,110 @@ describe('seededRandom', () => {
   });
 });
 
-describe('backgroundFibres', () => {
-  const options = { width: 1200, height: 150, count: 12, seed: 7 };
-
-  it('draws the requested number of fibres, all as paths', () => {
-    const fibres = backgroundFibres(options);
-    expect(fibres).toHaveLength(12);
-    expect(fibres.every((fibre) => fibre.d.startsWith('M'))).toBe(true);
+describe('taperedPath', () => {
+  it('is a closed outline that ends in a point', () => {
+    const d = taperedPath(
+      [
+        [0, 0],
+        [10, 0],
+        [20, 0],
+      ],
+      4,
+      1,
+    );
+    expect(d.startsWith('M')).toBe(true);
+    expect(d.endsWith('Z')).toBe(true);
+    expect(d).toContain('L20 0');
   });
 
-  it('is stable across calls, so a re-render does not reshuffle the network', () => {
-    expect(backgroundFibres(options)).toEqual(backgroundFibres(options));
-  });
-
-  it('keeps every fibre faint enough to stay context, not decoration', () => {
-    expect(backgroundFibres(options).every((fibre) => fibre.opacity <= 0.17)).toBe(true);
+  it('is wider at the start than at the end', () => {
+    const d = taperedPath(
+      [
+        [0, 0],
+        [20, 0],
+      ],
+      6,
+      2,
+    );
+    // Start: y = ±3; end: y = ±1.
+    expect(d.startsWith('M0 3')).toBe(true);
+    expect(d).toContain('20 1');
   });
 });
 
-describe('dendriteTree', () => {
-  const options = { cx: 520, cy: 68, primary: 7, orders: 3, seed: 3 };
-
-  it('bifurcates at every order: 7 primaries become 7 + 14 + 28 segments', () => {
-    expect(dendriteTree(options)).toHaveLength(49);
+describe('somaPath', () => {
+  it('is a smooth closed shape around the centre', () => {
+    const d = somaPath({ cx: 100, cy: 50, size: 10, seed: 2 });
+    expect(d.endsWith('Z')).toBe(true);
+    expect(d.match(/C /g)).toHaveLength(9);
   });
 
-  it('starts every primary branch at the soma', () => {
-    const primaries = dendriteTree(options).filter((segment) => segment.order === 1);
-    expect(primaries).toHaveLength(7);
-    expect(primaries.every((segment) => segment.d.startsWith('M520 68'))).toBe(true);
+  it('reaches further towards the apical pole than towards the base', () => {
+    const d = somaPath({ cx: 100, cy: 50, size: 10, apical: -Math.PI / 2, seed: 2 });
+    const ys = [...d.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[2]));
+    expect(50 - Math.min(...ys)).toBeGreaterThan(Math.max(...ys) - 50);
+  });
+});
+
+describe('pyramidalNeuron', () => {
+  const neuron = pyramidalNeuron({ cx: 520, cy: 74, seed: 5 });
+
+  it('is identical on every call, so a re-render does not reshuffle the cell', () => {
+    expect(pyramidalNeuron({ cx: 520, cy: 74, seed: 5 })).toEqual(neuron);
   });
 
-  it('tapers: a higher order is always thinner', () => {
-    const segments = dendriteTree(options);
-    const widthAt = (order) => segments.find((segment) => segment.order === order).width;
-    expect(widthAt(1)).toBeGreaterThan(widthAt(2));
-    expect(widthAt(2)).toBeGreaterThan(widthAt(3));
+  it('has one apical and several basal dendrites leaving the soma', () => {
+    const primaries = neuron.dendrites.filter((segment) => segment.order === 1);
+    expect(primaries).toHaveLength(6);
+  });
+
+  it('branches asymmetrically: daughters are thinner than their parent', () => {
+    const widest = (order) =>
+      Math.max(...neuron.dendrites.filter((s) => s.order === order).map((s) => s.width));
+    expect(widest(1)).toBeGreaterThan(widest(2));
+    expect(widest(2)).toBeGreaterThan(widest(3));
+  });
+
+  it('has spines, only on distal branches', () => {
+    expect(neuron.spines.count).toBeGreaterThan(20);
+    const proximalOnly = dendriticSpines(
+      neuron.dendrites.filter((s) => s.order === 1),
+      3,
+    );
+    expect(proximalOnly.count).toBe(0);
+  });
+});
+
+describe('axonPath', () => {
+  const axon = axonPath({ from: [528, 77], to: [770, 90], seed: 41 });
+
+  it('ends where it was asked to, at the next cell', () => {
+    expect(axon.end).toEqual([770, 90]);
+    expect(axon.shaft.startsWith('M')).toBe(true);
+  });
+
+  it('starts with a tapered hillock and ends in boutons', () => {
+    expect(axon.hillock.endsWith('Z')).toBe(true);
+    expect(axon.boutons).toHaveLength(4);
+  });
+
+  it('has no terminal arbor when it leaves the frame', () => {
+    const exit = axonPath({ from: [1088, 77], to: [1250, 84], terminal: false });
+    expect(exit.boutons).toHaveLength(0);
+    expect(exit.arbor).toBe('');
+  });
+});
+
+describe('backgroundNeurons', () => {
+  const options = { width: 1200, height: 150, count: 6, seed: 7 };
+
+  it('draws the requested number of out-of-focus cells, faint and blurred', () => {
+    const cells = backgroundNeurons(options);
+    expect(cells).toHaveLength(6);
+    expect(cells.every((cell) => cell.opacity <= 0.28 && cell.blur >= 1)).toBe(true);
   });
 
   it('is stable across calls', () => {
-    expect(dendriteTree(options)).toEqual(dendriteTree(options));
-  });
-});
-
-describe('the axon', () => {
-  const curve = axonCurve({ fromX: 100, toX: 300, y: 68 });
-
-  it('runs from the given start to the given end', () => {
-    expect(pointOnCurve(curve, 0)).toEqual({ x: 100, y: 68 });
-    expect(pointOnCurve(curve, 1)).toEqual({ x: 300, y: 68 });
-    expect(pathFromCurve(curve).startsWith('M100 68')).toBe(true);
-  });
-
-  it('advances monotonically along x', () => {
-    const xs = [0, 0.25, 0.5, 0.75, 1].map((t) => pointOnCurve(curve, t).x);
-    expect(xs).toEqual([...xs].sort((a, b) => a - b));
-  });
-
-  it('spaces the nodes of Ranvier evenly between the ends, exclusive', () => {
-    const nodes = ranvierNodes(curve, 5);
-    expect(nodes).toHaveLength(5);
-    expect(nodes[0].x).toBeGreaterThan(100);
-    expect(nodes[4].x).toBeLessThan(300);
-    expect(nodes[2]).toEqual(pointOnCurve(curve, 0.5));
+    expect(backgroundNeurons(options)).toEqual(backgroundNeurons(options));
   });
 });

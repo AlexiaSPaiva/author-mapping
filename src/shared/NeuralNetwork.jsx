@@ -1,25 +1,21 @@
 /**
- * The header drawing: the three litpipe stages as a chain of myelinated neurons,
- * drawn as a neuroanatomy figure rather than an illustration — tapering dendritic
- * arbors, a sheathed axon, and an impulse that jumps node to node the way
- * saltatory conduction actually works.
+ * The header drawing: the three litpipe stages as a chain of cortical pyramidal
+ * neurons, rendered like a fluorescence micrograph — irregular somata, tapering
+ * and asymmetrically branching dendrites with spines, axons with a hillock, a
+ * collateral and synaptic boutons, and out-of-focus cells behind them for depth.
  *
  * The metaphor is the product. Data only ever moves forward, one stage at a
  * time, and nothing reaches the next cell without being released at the
  * terminal — which is exactly what the export/import hand-off does.
  *
- * anime.js drives everything that moves. Identical file in the three apps.
+ * anime.js drives the activity, in physiological order: input arrives at the
+ * dendrites, the soma fires, the action potential travels down the axon, the
+ * boutons release, and the next cell receives it. Identical file in the three apps.
  */
 import { useEffect, useRef } from 'react';
-import { animate, createScope, stagger, steps, svg } from 'animejs';
+import { animate, createScope, createTimeline, svg } from 'animejs';
 
-import {
-  axonCurve,
-  backgroundFibres,
-  dendriteTree,
-  pathFromCurve,
-  ranvierNodes,
-} from './neuralGeometry.js';
+import { axonPath, backgroundNeurons, pyramidalNeuron } from './neuralGeometry.js';
 
 /**
  * Drawing space. The SVG fills the header (slice), so a wide, shallow frame is
@@ -30,50 +26,34 @@ import {
 export const FRAME = { width: 1200, height: 150 };
 
 /**
- * Where the three cell bodies sit, left to right. They are pushed into the
- * right-hand half of the frame: the left half is where the title sits, and a
- * cell behind a heading is just noise.
+ * Where the three cell bodies sit, left to right, pushed into the right-hand
+ * half of the frame: the left half is where the title sits.
  */
 const CELL_X = [520, 800, 1080];
-const CELL_Y = 68;
-const SOMA = { rx: 26, ry: 19 };
+const CELL_Y = 74;
 
 /** How far past the last cell the outgoing axon runs before leaving the frame. */
-const EXIT_X = 1240;
+const EXIT_X = 1250;
 
-/** Internodes per axon. Each gap between them is a node of Ranvier. */
-const NODE_COUNT = 5;
-
-const FIBRES = backgroundFibres({ ...FRAME, count: 20, seed: 11 });
-
-/** Where the axon of stage `index` ends: the synaptic terminal. */
-const terminalX = (index) =>
-  index + 1 < CELL_X.length ? CELL_X[index + 1] - SOMA.rx - 26 : EXIT_X;
+const BACKGROUND = backgroundNeurons({ ...FRAME, count: 9, seed: 11 });
 
 /** Geometry per cell, computed once at module load: it never changes. */
 const CELLS = CELL_X.map((cx, index) => {
-  const curve = axonCurve({
-    fromX: cx + SOMA.rx,
-    toX: terminalX(index),
-    y: CELL_Y,
-    sag: index % 2 === 0 ? 11 : -11,
+  const neuron = pyramidalNeuron({ cx, cy: CELL_Y, seed: 5 + index * 19, basal: 5 });
+  const isLast = index === CELL_X.length - 1;
+  const axon = axonPath({
+    from: [cx + 8, CELL_Y + 3],
+    // Ends among the basal dendrites of the next cell, where the synapse is.
+    to: isLast ? [EXIT_X, CELL_Y + 10] : [CELL_X[index + 1] - 30, CELL_Y + 16],
+    seed: 41 + index * 7,
+    terminal: !isLast,
   });
-
-  return {
-    cx,
-    cy: CELL_Y,
-    dendrites: dendriteTree({
-      cx,
-      cy: CELL_Y,
-      primary: 7,
-      orders: 3,
-      reach: 46,
-      seed: 3 + index * 17,
-    }),
-    axon: pathFromCurve(curve),
-    nodes: ranvierNodes(curve, NODE_COUNT),
-  };
+  return { cx, cy: CELL_Y, ...neuron, axon };
 });
+
+/** Fluorescent label colours: bright core, cooler periphery. */
+const MEMBRANE = '#8CCFF0';
+const CORE = '#DDF3FF';
 
 /**
  * @param {{ current: 'triage' | 'reading' | 'authors', stages: { key: string, name: string, label: string, url: string }[] }} props
@@ -89,61 +69,54 @@ export default function NeuralNetwork({ current, stages }) {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
 
     scope.current = createScope({ root }).add(() => {
+      const timeline = createTimeline({ loop: true, loopDelay: 1400 });
+
       CELLS.forEach((_cell, index) => {
-        const path = root.current.querySelector(`#axon-${index}`);
-        if (!path) return;
+        const start = index * 1550;
+        const spike = root.current.querySelector(`#ap-${index}`);
+        if (!spike) return;
+        const [drawable] = svg.createDrawable(spike);
 
-        // Saltatory conduction: the impulse is regenerated at each node of
-        // Ranvier, so it steps between them instead of sliding along the fibre.
-        animate(`#spike-${index}`, {
-          ...svg.createMotionPath(path),
-          duration: 1500,
-          delay: index * 420,
-          ease: steps(NODE_COUNT + 1),
-          loop: true,
-        });
-
-        animate(`#spike-${index}`, {
-          opacity: [
-            { to: 0, duration: 0 },
-            { to: 1, duration: 180 },
-            { to: 1, duration: 900 },
-            { to: 0, duration: 420 },
-          ],
-          delay: index * 420,
-          loop: true,
-        });
-
-        // Vesicle release: the terminal brightens as the impulse arrives.
-        animate(`#terminal-${index}`, {
-          opacity: [0.45, 1, 0.45],
-          duration: 520,
-          delay: index * 420 + 1300,
-          ease: 'out(3)',
-          loop: true,
-          loopDelay: 1000,
-        });
+        timeline
+          // Synaptic input reaches the dendrites (spontaneous for the first cell).
+          .add(`#input-${index}`, { opacity: [0, 0.5, 0], duration: 800, ease: 'inOutSine' }, start)
+          // The soma integrates and fires.
+          .add(
+            `#fire-${index}`,
+            { opacity: [0, 0.9, 0], duration: 700, ease: 'out(3)' },
+            start + 380,
+          )
+          // The action potential travels down the axon as a short bright front.
+          .add(
+            drawable,
+            { draw: ['0 0', '0 0.12', '0.88 1', '1 1'], duration: 1050, ease: 'linear' },
+            start + 560,
+          )
+          .add(
+            spike,
+            {
+              opacity: [
+                { to: 1, duration: 90 },
+                { to: 1, duration: 870 },
+                { to: 0, duration: 90 },
+              ],
+            },
+            start + 560,
+          )
+          // Vesicle release at the boutons.
+          .add(
+            `#boutons-${index}`,
+            { opacity: [0.5, 1, 0.5], duration: 520, ease: 'out(2)' },
+            start + 1500,
+          );
       });
 
-      // The cell you are looking at is the one that is firing. Kept to a change
-      // in membrane brightness rather than a change in size: a soma that
-      // inflates and deflates is not what a cell does.
-      animate('#soma-current', {
-        opacity: [0.72, 1, 0.72],
-        duration: 2400,
+      // The out-of-focus layer drifts very slowly, like a stage being nudged.
+      animate('#depth', {
+        x: [-5, 5],
+        duration: 16000,
         ease: 'inOutSine',
-        loop: true,
-      });
-
-      // The surrounding tissue breathes, faintly and out of step with itself.
-      animate('.fibre', {
-        opacity: (element) => {
-          const base = Number(element.dataset.opacity);
-          return [base, Math.min(base * 2, 0.22), base];
-        },
-        duration: 5600,
-        delay: stagger(160),
-        ease: 'inOutSine',
+        alternate: true,
         loop: true,
       });
     });
@@ -161,77 +134,105 @@ export default function NeuralNetwork({ current, stages }) {
       focusable="false"
     >
       <defs>
-        {/* Cytoplasm: a plain, low-contrast wash. The structure is carried by
-            the outline, as in a plate from an atlas. */}
-        <radialGradient id="soma-fill" cx="38%" cy="34%" r="70%">
-          <stop offset="0%" stopColor="#8FD3F4" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#2E7BA6" stopOpacity="0.16" />
+        <radialGradient id="haze" cx="62%" cy="45%" r="70%">
+          <stop offset="0%" stopColor="#0E2F45" />
+          <stop offset="100%" stopColor="#06121D" />
         </radialGradient>
 
-        <radialGradient id="haze" cx="50%" cy="46%" r="62%">
-          <stop offset="0%" stopColor="#123A52" stopOpacity="0.95" />
-          <stop offset="100%" stopColor="#08192A" stopOpacity="1" />
+        {/* Somata are brightest at the centre, as with a cytoplasmic label. */}
+        <radialGradient id="soma-fill" cx="50%" cy="45%" r="60%">
+          <stop offset="0%" stopColor={CORE} />
+          <stop offset="100%" stopColor={MEMBRANE} />
         </radialGradient>
 
-        {/* Darkens the tissue behind the title so the text stays readable at
-            any width, without dimming the cells themselves. */}
+        {/* Darkens the tissue behind the title so the text stays readable. */}
         <linearGradient id="text-veil" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="#08192A" stopOpacity="0.9" />
-          <stop offset="45%" stopColor="#08192A" stopOpacity="0.62" />
-          <stop offset="72%" stopColor="#08192A" stopOpacity="0" />
+          <stop offset="0%" stopColor="#06121D" stopOpacity="0.92" />
+          <stop offset="40%" stopColor="#06121D" stopOpacity="0.6" />
+          <stop offset="70%" stopColor="#06121D" stopOpacity="0" />
         </linearGradient>
 
-        {/* One soft pass only: enough to read as a wet-mount micrograph, not
-            enough to look like neon. */}
-        <filter id="glow-soft" x="-70%" y="-70%" width="240%" height="240%">
-          <feGaussianBlur stdDeviation="2.4" result="blur" />
+        {/* The halo of a fluorescent label: one soft pass under the sharp shape. */}
+        <filter id="fluorescence" x="-20%" y="-40%" width="140%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="halo" />
+          <feColorMatrix
+            in="halo"
+            type="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.7 0"
+          />
           <feMerge>
-            <feMergeNode in="blur" />
+            <feMergeNode />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
+        </filter>
+        {/* The impulse: a soft travelling front, brighter at its core. */}
+        <filter id="impulse" x="-10%" y="-200%" width="120%" height="500%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="wide" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" result="core" />
+          <feMerge>
+            <feMergeNode in="wide" />
+            <feMergeNode in="wide" />
+            <feMergeNode in="core" />
+          </feMerge>
+        </filter>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="2.6" />
+        </filter>
+        <filter id="defocus-near">
+          <feGaussianBlur stdDeviation="1.3" />
+        </filter>
+        <filter id="defocus-far">
+          <feGaussianBlur stdDeviation="2.4" />
         </filter>
       </defs>
 
       <rect width={FRAME.width} height={FRAME.height} fill="url(#haze)" />
 
-      {/* The tissue the cells are embedded in. */}
-      <g fill="none" stroke="#5FA8D3" strokeLinecap="round">
-        {FIBRES.map((fibre, index) => (
-          <path
-            key={`fibre-${index}`}
-            className="fibre"
-            data-opacity={fibre.opacity}
-            d={fibre.d}
-            strokeWidth={fibre.width}
-            opacity={fibre.opacity}
-          />
+      {/* Cells above and below the focal plane. */}
+      <g id="depth" fill={MEMBRANE}>
+        {BACKGROUND.map((neuron, index) => (
+          <g
+            key={`depth-${index}`}
+            opacity={neuron.opacity}
+            filter={neuron.blur > 1.8 ? 'url(#defocus-far)' : 'url(#defocus-near)'}
+          >
+            {neuron.dendrites.map((segment, segmentIndex) => (
+              <path key={segmentIndex} d={segment.d} />
+            ))}
+            <path d={neuron.soma} />
+          </g>
         ))}
       </g>
 
       <rect width={FRAME.width} height={FRAME.height} fill="url(#text-veil)" />
 
-      {/* Axons: a thin axolemma under a segmented myelin sheath. The gaps in
-          the sheath are the nodes of Ranvier. */}
+      {/* Axons: hillock, shaft, collateral, terminal arbor and boutons. */}
       {CELLS.map((cell, index) => (
-        <g key={`axon-group-${index}`} fill="none">
+        <g key={`axon-${index}`}>
+          <g filter="url(#fluorescence)" opacity="0.85">
+            <path d={cell.axon.hillock} fill={MEMBRANE} />
+            <g fill="none" stroke={MEMBRANE} strokeLinecap="round">
+              <path d={cell.axon.shaft} strokeWidth="0.9" />
+              <path d={cell.axon.collateral} strokeWidth="0.55" opacity="0.7" />
+              <path d={cell.axon.arbor} strokeWidth="0.6" />
+            </g>
+            <g id={`boutons-${index}`} fill={CORE} opacity="0.5">
+              {cell.axon.boutons.map((bouton, boutonIndex) => (
+                <circle key={boutonIndex} cx={bouton.x} cy={bouton.y} r={bouton.r} />
+              ))}
+            </g>
+          </g>
+          {/* The travelling action potential, drawn over the shaft. */}
           <path
-            id={`axon-${index}`}
-            d={cell.axon}
-            stroke="#8FD3F4"
-            strokeWidth="1.4"
-            opacity="0.7"
+            id={`ap-${index}`}
+            d={cell.axon.shaft}
+            fill="none"
+            stroke="#D8F2FF"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            opacity="0"
+            filter="url(#impulse)"
           />
-          <path
-            d={cell.axon}
-            stroke="#5FA8D3"
-            strokeWidth="6"
-            strokeOpacity="0.22"
-            strokeLinecap="butt"
-            strokeDasharray="26 9"
-          />
-          {cell.nodes.map((node, nodeIndex) => (
-            <circle key={nodeIndex} cx={node.x} cy={node.y} r="1.6" fill="#8FD3F4" opacity="0.55" />
-          ))}
         </g>
       ))}
 
@@ -241,55 +242,51 @@ export default function NeuralNetwork({ current, stages }) {
 
         const cellBody = (
           <g>
-            {/* Dendritic arbor: what this stage accepts. */}
-            <g fill="none" stroke="#7FC4E8" strokeLinecap="round" opacity={isCurrent ? 0.85 : 0.5}>
-              {cell.dendrites.map((segment, segmentIndex) => (
-                <path
-                  key={segmentIndex}
-                  d={segment.d}
-                  strokeWidth={segment.width}
-                  strokeOpacity={1 - (segment.order - 1) * 0.18}
-                />
-              ))}
+            <g opacity={isCurrent ? 1 : 0.58} filter="url(#fluorescence)">
+              <g fill={MEMBRANE}>
+                {cell.dendrites.map((segment, segmentIndex) => (
+                  <path key={segmentIndex} d={segment.d} />
+                ))}
+              </g>
+              <g fill="none" stroke={MEMBRANE} strokeLinecap="round">
+                <path d={cell.spines.necks} strokeWidth="0.35" opacity="0.75" />
+                <path d={cell.spines.heads} strokeWidth="0.85" opacity="0.85" />
+              </g>
+              <path d={cell.soma} fill="url(#soma-fill)" />
+              {/* The nucleus shows as a darker, unlabelled region. */}
+              <ellipse
+                cx={cell.cx - 0.5}
+                cy={cell.cy + 1}
+                rx="4.2"
+                ry="3.6"
+                fill="#0B2A3F"
+                opacity="0.18"
+                filter="url(#defocus-far)"
+              />
             </g>
 
-            <g
-              id={isCurrent ? 'soma-current' : undefined}
-              opacity={isCurrent ? 1 : 0.72}
-              filter={isCurrent ? 'url(#glow-soft)' : undefined}
-            >
-              {/* Soma: outline first, wash second — the outline is the figure. */}
-              <ellipse
-                cx={cell.cx}
-                cy={cell.cy}
-                rx={SOMA.rx}
-                ry={SOMA.ry}
-                fill="url(#soma-fill)"
-                stroke="#9BDCFB"
-                strokeWidth="1.3"
-                strokeOpacity={isCurrent ? 0.95 : 0.6}
-              />
-              {/* Nucleus and, inside it, the nucleolus. */}
-              <ellipse
-                cx={cell.cx - 2}
-                cy={cell.cy - 1}
-                rx="8.5"
-                ry="7"
-                fill="#7E62C8"
-                fillOpacity="0.5"
-                stroke="#C3ABF2"
-                strokeWidth="1"
-                strokeOpacity="0.75"
-              />
-              <circle cx={cell.cx - 3.5} cy={cell.cy - 2} r="2.4" fill="#D9CBFA" opacity="0.8" />
+            {/* Activity overlays, animated: dendritic input and somatic firing. */}
+            <g id={`input-${index}`} opacity="0" fill={CORE} filter="url(#glow)">
+              {cell.dendrites
+                .filter((segment) => segment.order <= 2)
+                .map((segment, segmentIndex) => (
+                  <path key={segmentIndex} d={segment.d} />
+                ))}
             </g>
+            <path
+              id={`fire-${index}`}
+              d={cell.soma}
+              fill="#FFFFFF"
+              opacity="0"
+              filter="url(#glow)"
+            />
 
             <text
               className="neuron-label"
               x={cell.cx}
-              // Close under the soma on purpose: this is the part of the frame
-              // the crop keeps at every viewport width.
-              y={cell.cy + SOMA.ry + 20}
+              // Under the cell on purpose: this is the part of the frame the
+              // crop keeps at every viewport width.
+              y={cell.cy + 40}
               textAnchor="middle"
               fontSize="11"
               fontWeight={isCurrent ? 700 : 500}
@@ -317,30 +314,6 @@ export default function NeuralNetwork({ current, stages }) {
           </a>
         );
       })}
-
-      {/* Synaptic terminals and the impulses that reach them. */}
-      {CELLS.map((_cell, index) => (
-        <g key={`synapse-${index}`}>
-          <circle
-            id={`terminal-${index}`}
-            cx={terminalX(index)}
-            cy={CELL_Y}
-            r="4.5"
-            fill="#E8A33D"
-            stroke="#F6C87A"
-            strokeWidth="1"
-            filter="url(#glow-soft)"
-            opacity="0.45"
-          />
-          <circle
-            id={`spike-${index}`}
-            r="3.4"
-            fill="#F6C87A"
-            filter="url(#glow-soft)"
-            opacity="0"
-          />
-        </g>
-      ))}
     </svg>
   );
 }
